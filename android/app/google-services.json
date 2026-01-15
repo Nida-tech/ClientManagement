@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "647078749532",
+    "project_id": "solar-cleaning-app-6409f",
+    "storage_bucket": "solar-cleaning-app-6409f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:647078749532:android:b99ffe3e8db934f5d84d99",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBicgPws4z3BZll7k8EDlq0wbAZE4cB3n8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
