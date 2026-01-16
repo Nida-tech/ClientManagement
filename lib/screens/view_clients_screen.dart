@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+//import 'package:flutter_application_1/models/client_model.dart';
 import 'client_detail_screen.dart';
+//port 'dashboard_screen.dart';
 
 class ViewClientsScreen extends StatefulWidget {
-  const ViewClientsScreen({super.key});
-
+  const ViewClientsScreen({super.key}); 
+  
   @override
   State<ViewClientsScreen> createState() => _ViewClientsScreenState();
 }

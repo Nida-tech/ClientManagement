@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/team_model.dart';
+import '../services/firestore_service.dart';
 
 class AddTeamScreen extends StatefulWidget {
   const AddTeamScreen({super.key});
@@ -10,20 +11,18 @@ class AddTeamScreen extends StatefulWidget {
 
 class _AddTeamScreenState extends State<AddTeamScreen> {
   final _formKey = GlobalKey<FormState>();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _membersController = TextEditingController();
 
-  final nameController = TextEditingController();
-  final phoneController = TextEditingController();
-  final membersController = TextEditingController();
+  final FirestoreService _service = FirestoreService();
 
-  bool isLoading = false;
+  bool _loading = false;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Team'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Add Team')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -31,39 +30,35 @@ class _AddTeamScreenState extends State<AddTeamScreen> {
           child: Column(
             children: [
               TextFormField(
-                controller: nameController,
+                controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Team Name'),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Required' : null,
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Enter team name' : null,
               ),
-              const SizedBox(height: 10),
+             
+             
               TextFormField(
-                controller: phoneController,
-                decoration:
-                    const InputDecoration(labelText: 'WhatsApp Number'),
-                keyboardType: TextInputType.phone,
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Required' : null,
+                controller: _phoneController,
+                decoration: const InputDecoration(labelText: 'Team WhatsApp Number'),
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Enter phone number' : null,
               ),
-              const SizedBox(height: 10),
+              
+              
               TextFormField(
-                controller: membersController,
-                decoration:
-                    const InputDecoration(labelText: 'Number of Members'),
-                keyboardType: TextInputType.number,
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Required' : null,
+                controller: _membersController,
+                decoration: const InputDecoration(
+                    labelText: 'Members (comma separated)'),
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Enter members' : null,
               ),
-              const SizedBox(height: 30),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: isLoading ? null : _saveTeam,
-                  child: isLoading
-                      ? const CircularProgressIndicator()
-                      : const Text('Save Team'),
-                ),
-              )
+              const SizedBox(height: 20),
+              _loading
+                  ? const CircularProgressIndicator()
+                  : ElevatedButton(
+                      onPressed: _saveTeam,
+                      child: const Text('Save Team'),
+                    ),
             ],
           ),
         ),
@@ -74,16 +69,18 @@ class _AddTeamScreenState extends State<AddTeamScreen> {
   Future<void> _saveTeam() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => isLoading = true);
+    setState(() => _loading = true);
 
-    await FirebaseFirestore.instance.collection('teams').add({
-      'name': nameController.text.trim(),
-      'phone': phoneController.text.trim(),
-      'members': int.parse(membersController.text),
-      'createdAt': Timestamp.now(),
-    });
+    final team = Team(
+      id: '',
+      name: _nameController.text.trim(),
+      phone: _phoneController.text.trim(),
+      members: _membersController.text.split(',').map((e) => e.trim()).toList(),
+      clientIds: [],
+    );
 
-    setState(() => isLoading = false);
+    await _service.addTeam(team);
+
     if (!mounted) return;
     Navigator.pop(context);
   }

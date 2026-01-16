@@ -4,96 +4,80 @@ import '../models/team_model.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-Stream<List<Team>> getTeams() {
-  return _firestore.collection('teams').snapshots().map(
-        (snapshot) =>
-            snapshot.docs.map((doc) => Team.fromDocument(doc)).toList(),
-      );
-}
 
-Stream<List<Client>> getUnassignedClients() {
-  return _firestore
-      .collection('clients')
-      .where('teamId', isNull: true)
-      .snapshots()
-      .map(
-        (snapshot) =>
-            snapshot.docs.map((doc) => Client.fromDocument(doc)).toList(),
-      );
-}
-
-Stream<List<Client>> getClientsByTeam(String teamId) {
-  return _firestore
-      .collection('clients')
-      .where('teamId', isEqualTo: teamId)
-      .snapshots()
-      .map((s) =>
-          s.docs.map((d) => Client.fromDocument(d)).toList());
-}
-
-Future<List<Client>> getClientsByTeamOnce(String teamId) async {
-  final snap = await _firestore
-      .collection('clients')
-      .where('teamId', isEqualTo: teamId)
-      .get();
-
-  return snap.docs.map((d) => Client.fromDocument(d)).toList();
-}
-
-  // Get all clients
+  /// ================= CLIENTS =================
   Stream<List<Client>> getClients() {
     return _firestore
         .collection('clients')
         .orderBy('nextCleaningDate')
         .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map((doc) => Client.fromDocument(doc))
-              .toList(),
-        );
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => Client.fromDocument(doc)).toList());
   }
 
-  // Add client
+
   Future<void> addClient(Client client) async {
     await _firestore.collection('clients').add(client.toMap());
   }
 
-  // Update client
-  Future<void> updateClient(String id, Map<String, dynamic> data) async {
-    await _firestore.collection('clients').doc(id).update(data);
+  Future<void> updateClient(Client client) async {
+    await _firestore
+        .collection('clients')
+        .doc(client.id)
+        .update(client.toMap());
   }
 
-  // Delete client
-  Future<void> deleteClient(String id) async {
-    await _firestore.collection('clients').doc(id).delete();
+  Future<void> deleteClient(String clientId) async {
+    await _firestore.collection('clients').doc(clientId).delete();
   }
 
-  Future<void> assignClientToTeam({
-  required String clientId,
-  required String teamId,
-}) async {
-  final teamRef = _firestore.collection('teams').doc(teamId);
-  final clientRef = _firestore.collection('clients').doc(clientId);
-
-  final teamSnap = await teamRef.get();
-  final teamData = teamSnap.data() as Map<String, dynamic>;
-
-  final List clients =
-      List.from(teamData['clientIds'] ?? []);
-
-  if (clients.length >= 5) {
-    throw Exception('This team already has 5 clients');
+  Future<Client> getClientById(String clientId) async {
+    final doc = await _firestore.collection('clients').doc(clientId).get();
+    return Client.fromDocument(doc);
   }
 
-  await teamRef.update({
-    'clientIds': FieldValue.arrayUnion([clientId]),
-  });
+  /// ================= TEAMS =================
+  Stream<List<Team>> getTeams() {
+    return _firestore.collection('teams').snapshots().map(
+        (snapshot) => snapshot.docs.map((doc) => Team.fromDocument(doc)).toList());
+  }
 
-  await clientRef.update({
-    'teamId': teamId,
-  });
-}
+  Future<void> addTeam(Team team) async {
+    await _firestore.collection('teams').add({
+      'name': team.name,
+      'phone': team.phone,
+      'members': team.members,
+      'clientIds': team.clientIds,
+    });
+  }
 
+  Future<void> updateTeam(Team team) async {
+    await _firestore.collection('teams').doc(team.id).update({
+      'name': team.name,
+      'phone': team.phone,
+      'members': team.members,
+      'clientIds': team.clientIds,
+    });
+  }
 
+  Future<void> deleteTeam(String teamId) async {
+    await _firestore.collection('teams').doc(teamId).delete();
+  }
 
+  Future<Team> getTeamById(String teamId) async {
+    final doc = await _firestore.collection('teams').doc(teamId).get();
+    return Team.fromDocument(doc);
+  }
+
+  /// ================= HELPER =================
+  Future<List<Client>> getClientsByIds(List<String> clientIds) async {
+    if (clientIds.isEmpty) return [];
+
+    final query = await _firestore
+        .collection('clients')
+        .where(FieldPath.documentId, whereIn: clientIds)
+        .get();
+
+    return query.docs.map((doc) => Client.fromDocument(doc)).toList();
+  }
 }

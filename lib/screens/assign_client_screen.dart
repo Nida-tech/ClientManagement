@@ -1,181 +1,108 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+
 
 import '../models/client_model.dart';
 import '../models/team_model.dart';
 import '../services/firestore_service.dart';
-
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AssignClientScreen extends StatefulWidget {
-  const AssignClientScreen({super.key});
+  final Team team;
+  const AssignClientScreen({super.key, required this.team});
 
   @override
   State<AssignClientScreen> createState() => _AssignClientScreenState();
 }
 
 class _AssignClientScreenState extends State<AssignClientScreen> {
-  final FirestoreService _firestoreService = FirestoreService();
+  final FirestoreService _service = FirestoreService();
+  List<Client> _clients = [];
+  List<String> _selectedClientIds = [];
 
-  Team? selectedTeam;
-  final List<Client> selectedClients = [];
+  @override
+  void initState() {
+    super.initState();
+    _loadClients();
+    _selectedClientIds = List.from(widget.team.clientIds);
+  }
+
+  Future<void> _loadClients() async {
+    final clients = await _service.getClients().first;
+    setState(() => _clients = clients);
+  }
+
+  Future<void> _saveAssignment() async {
+    if (_selectedClientIds.length > 5) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Max 5 clients can be assigned')));
+      return;
+    }
+
+    final updatedTeam = Team(
+      id: widget.team.id,
+      name: widget.team.name,
+      phone: widget.team.phone,
+      members: widget.team.members,
+      clientIds: _selectedClientIds,
+    );
+
+    await _service.updateTeam(updatedTeam);
+
+    await _sendWhatsAppMessage(updatedTeam);
+
+    if (!mounted) return;
+    Navigator.pop(context);
+  }
+
+  Future<void> _sendWhatsAppMessage(Team team) async {
+    final assignedClients =
+        await _service.getClientsByIds(team.clientIds);
+
+    final messageBuffer = StringBuffer();
+    messageBuffer.writeln("Hello ${team.name} 👋\nAssigned Clients:\n");
+
+    for (var client in assignedClients) {
+      messageBuffer.writeln(
+          "${client.name} - ${client.pinLocation} - ${DateFormat('dd MMM yyyy').format(client.nextCleaningDate)}");
+    }
+
+    final url = Uri.parse(
+        'https://wa.me/${team.phone.replaceAll('+', '')}?text=${Uri.encodeComponent(messageBuffer.toString())}');
+
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Assign Clients to Team'),
-        centerTitle: true,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            /// TEAM DROPDOWN
-            const Text(
-              'Select Team',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-
-            StreamBuilder<List<Team>>(
-              stream: _firestoreService.getTeams(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const CircularProgressIndicator();
+      appBar: AppBar(title: Text('Assign Clients to ${widget.team.name}')),
+      body: ListView(
+        children: _clients.map((client) {
+          final isSelected = _selectedClientIds.contains(client.id);
+          return CheckboxListTile(
+            title: Text(client.name),
+            subtitle: Text(DateFormat('dd MMM yyyy').format(client.nextCleaningDate)),
+            value: isSelected,
+            onChanged: (val) {
+              setState(() {
+                if (val == true) {
+                  _selectedClientIds.add(client.id);
+                } else {
+                  _selectedClientIds.remove(client.id);
                 }
-
-                final teams = snapshot.data!;
-
-                return DropdownButtonFormField<Team>(
-                  initialValue: selectedTeam,
-                  hint: const Text('Choose a team'),
-                  items: teams.map((team) {
-                    return DropdownMenuItem(
-                      value: team,
-                      child: Text('${team.name} (${team.members} members)'),
-                    );
-                  }).toList(),
-                  onChanged: (team) {
-                    setState(() {
-                      selectedTeam = team;
-                      selectedClients.clear();
-                    });
-                  },
-                );
-              },
-            ),
-
-            const SizedBox(height: 20),
-
-            /// CLIENT LIST
-            const Text(
-              'Select Clients (Max 5)',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-
-            Expanded(
-              child: StreamBuilder<List<Client>>(
-                stream: _firestoreService.getUnassignedClients(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  final clients = snapshot.data!;
-
-                  if (clients.isEmpty) {
-                    return const Center(
-                      child: Text('No unassigned clients'),
-                    );
-                  }
-
-                  return ListView.builder(
-                    itemCount: clients.length,
-                    itemBuilder: (context, index) {
-                      final client = clients[index];
-                      final isSelected =
-                          selectedClients.any((c) => c.id == client.id);
-
-                      return Card(
-                        child: CheckboxListTile(
-                          value: isSelected,
-                          title: Text(client.name),
-                          subtitle: Text(client.phone),
-                          onChanged: (value) {
-                            if (value == true) {
-                              if (selectedClients.length == 5) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Maximum 5 clients allowed per team',
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
-                              setState(() {
-                                selectedClients.add(client);
-                              });
-                            } else {
-                              setState(() {
-                                selectedClients
-                                    .removeWhere((c) => c.id == client.id);
-                              });
-                            }
-                          },
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            /// ASSIGN BUTTON
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: selectedTeam == null || selectedClients.isEmpty
-                    ? null
-                    : _assignClients,
-                child: const Text('Assign Clients'),
-              ),
-            ),
-          ],
-        ),
+              });
+            },
+          );
+        }).toList(),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _saveAssignment,
+        label: const Text('Assign & Notify'),
+        icon: const Icon(Icons.send),
       ),
     );
   }
 
-  Future<void> _assignClients() async {
-    if (selectedTeam == null) return;
 
-    try {
-      for (final client in selectedClients) {
-        await FirebaseFirestore.instance
-            .collection('clients')
-            .doc(client.id)
-            .update({
-          'teamId': selectedTeam!.id,
-        });
-      }
-      if (!mounted) return;
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clients assigned successfully')),
-      );
-
-      setState(() {
-        selectedClients.clear();
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-    }
-  }
 }
