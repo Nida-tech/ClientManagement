@@ -27,5 +27,12 @@ members: List<String>.from(data['members'] ?? []),
 clientIds: List<String>.from(data['clientIds'] ?? []),
 );
 }
-}
+Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'phone': phone,
+      'members': members,
+      'clientIds': clientIds,
+    };
+}}
 

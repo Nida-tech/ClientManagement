@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/client_model.dart';
-import '../models/team_model.dart';
 import '../services/firestore_service.dart';
 import 'add_client_screen.dart';
-import 'view_clients_screen.dart';
-import 'team_detail_screen.dart';
-import 'add_team_screen.dart';
+import 'team_list_screen.dart';
+import 'client_detail_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -19,228 +17,307 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final FirestoreService _service = FirestoreService();
 
-  int _selectedTab = 0; // 0: Total, 1: This Month, 2: Upcoming, 3: Pending
+  String _searchPhone = '';
+  String _selectedTab = 'all';
 
-  bool _isUpcoming(DateTime date) {
-    final now = DateTime.now();
-    return date.isAfter(now) && date.isBefore(now.add(const Duration(days: 7)));
+  DateTime? _fromDate;
+  DateTime? _toDate;
+
+  bool _matches(Client c) {
+    final phoneMatch =
+        _searchPhone.isEmpty || c.phone.contains(_searchPhone);
+
+    final tabMatch =
+        _selectedTab == 'all' || c.status == _selectedTab;
+
+    final dateMatch =
+        (_fromDate == null && _toDate == null) ||
+        (_fromDate != null &&
+            _toDate != null &&
+            !c.nextCleaningDate.isBefore(_fromDate!) &&
+            !c.nextCleaningDate.isAfter(_toDate!));
+
+    return phoneMatch && tabMatch && dateMatch;
   }
 
-  bool _isPending(DateTime date) {
-    return date.isBefore(DateTime.now());
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'notified':
+        return Colors.orange.shade100;
+      case 'confirmed':
+        return Colors.green.shade100;
+      case 'pending':
+        return Colors.grey.shade300;
+      default:
+        return Colors.white;
+    }
   }
 
-  Future<void> sendWhatsAppReminder({
-    required String phone,
-    required String name,
-    required DateTime nextDate,
-    required int monthlyTimes,
-  }) async {
-    final formattedDate = DateFormat('dd MMM yyyy').format(nextDate);
+  Future<void> _pickDate(bool isFrom) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2023),
+      lastDate: DateTime(2030),
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      if (isFrom) {
+        _fromDate = picked;
+      } else {
+        _toDate = picked;
+      }
+    });
+  }
+
+  Future<void> _sendWhatsApp(Client client) async {
+    final formattedDate =
+        DateFormat('dd MMM yyyy').format(client.nextCleaningDate);
 
     final message = '''
-Hello $name 👋
+Hello ${client.name} 👋
 
-This is a reminder for your cleaning service 🧹
+📅 Next Cleaning: $formattedDate
+🔁 Monthly Cleanings: ${client.monthlyCleanings}
 
-📅 Next Cleaning Date: $formattedDate
-🔁 Monthly Cleanings: $monthlyTimes times
-
-Please reply YES to confirm or NO to reschedule.
-
-Thank you 😊
+Please confirm.
 ''';
 
     final url = Uri.parse(
-      'https://wa.me/${phone.replaceAll('+', '')}?text=${Uri.encodeComponent(message)}',
+      'https://wa.me/${client.phone.replaceAll('+', '')}?text=${Uri.encodeComponent(message)}',
     );
 
-    await launchUrl(
-      url,
-      mode: LaunchMode.externalApplication,
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+    await _service.updateClientStatus(client.id, 'notified');
+  }
+
+  Widget _summaryCard(String title, int value, Color color, String tab) {
+    return GestureDetector(
+      onTap: () => setState(() => _selectedTab = tab),
+      child: Card(
+        color: color,
+        child: Container(
+          width: 100,
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('$value',
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(title, textAlign: TextAlign.center),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    
     return Scaffold(
-      
-      appBar: AppBar(title: const Text('Dashboard'), centerTitle: true),
-      body: StreamBuilder<List<Client>>(
-        stream: _service.getClients(),
-        
-        builder: (context, clientSnapshot) {
-          if (clientSnapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      appBar: AppBar(title: const Text('Dashboard')),
+      body: SafeArea(
+        child: Column(
+          children: [
 
-          final clients = clientSnapshot.data ?? [];
-          
-
-          // Client Filtering
-          final upcomingClients = clients.where((c) => _isUpcoming(c.nextCleaningDate)).toList();
-          final pendingClients = clients.where((c) => _isPending(c.nextCleaningDate)).toList();
-          final thisMonthClients = clients.where((c) {
-            final now = DateTime.now();
-            return c.nextCleaningDate.month == now.month && c.nextCleaningDate.year == now.year;
-          }).toList();
-
-          List<Client> displayedClients;
-          switch (_selectedTab) {
-            case 1:
-              displayedClients = thisMonthClients;
-              break;
-            case 2:
-              displayedClients = upcomingClients;
-              break;
-            case 3:
-              displayedClients = pendingClients;
-              break;
-            default:
-              displayedClients = clients;
-          }
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // CLIENT SUMMARY CARDS
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _statCard('Total Clients', clients.length.toString(), 0),
-                    _statCard('This Month', thisMonthClients.length.toString(), 1),
-                  ],
+            /// 🔍 SEARCH
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: TextField(
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  hintText: 'Search by phone',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _statCard('Upcoming', upcomingClients.length.toString(), 2),
-                    _statCard('Pending', pendingClients.length.toString(), 3),
-                  ],
-                ),
-                const SizedBox(height: 25),
-                
-                // TEAMS SUMMARY
-                StreamBuilder<List<Team>>(
-                  stream: _service.getTeams(),
-                  builder: (context, teamSnapshot) {
-                    final teams = teamSnapshot.data ?? [];
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Teams', style: Theme.of(context).textTheme.titleLarge),
-                        const SizedBox(height: 10),
-                        ...teams.map((team) => Card(
-                          child: ListTile(
-                            title: Text(team.name),
-                            subtitle: Text('Members: ${team.members.join(', ')}'),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.arrow_forward),
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => TeamDetailScreen(team: team)),
-                                );
-                              },
-                            ),
-                          ),
-                        )),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 20),
+                onChanged: (v) => setState(() => _searchPhone = v),
+              ),
+            ),
 
-                // DISPLAY CLIENTS
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Clients',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                ...displayedClients.map((client) => Card(
-                  child: ListTile(
-                    title: Text(client.name),
-                    subtitle: Text(DateFormat('dd MMM yyyy').format(client.nextCleaningDate)),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.message, color: Colors.green),
-                      onPressed: () => sendWhatsAppReminder(
-                        phone: client.phone,
-                        name: client.name,
-                        nextDate: client.nextCleaningDate,
-                        monthlyTimes: client.monthlyCleanings,
+            /// 📅 DATE FILTER (NEW)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _pickDate(true),
+                      child: Text(
+                        _fromDate == null
+                            ? 'From Date'
+                            : DateFormat('dd MMM yyyy')
+                                .format(_fromDate!),
                       ),
                     ),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => ViewClientsScreen()),
-                      );
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _pickDate(false),
+                      child: Text(
+                        _toDate == null
+                            ? 'To Date'
+                            : DateFormat('dd MMM yyyy')
+                                .format(_toDate!),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      setState(() {
+                        _fromDate = null;
+                        _toDate = null;
+                      });
                     },
                   ),
-                )),
-              ],
+                ],
+              ),
             ),
-          );
-        },
+
+            const SizedBox(height: 8),
+
+            /// 📊 SUMMARY CARDS
+            SizedBox(
+              height: 90,
+              child: StreamBuilder<List<Client>>(
+                stream: _service.getClients(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(
+                        child: CircularProgressIndicator());
+                  }
+
+                  final clients = snapshot.data!;
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        _summaryCard('Total', clients.length,
+                            Colors.blue.shade100, 'all'),
+                        _summaryCard(
+                            'Pending',
+                            clients
+                                .where((c) => c.status == 'pending')
+                                .length,
+                            Colors.grey.shade300,
+                            'pending'),
+                        _summaryCard(
+                            'Notified',
+                            clients
+                                .where((c) => c.status == 'notified')
+                                .length,
+                            Colors.orange.shade200,
+                            'notified'),
+                        _summaryCard(
+                            'Confirmed',
+                            clients
+                                .where((c) => c.status == 'confirmed')
+                                .length,
+                            Colors.green.shade200,
+                            'confirmed'),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            /// 📋 CLIENT LIST
+            Expanded(
+              child: StreamBuilder<List<Client>>(
+                stream: _service.getClients(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(
+                        child: CircularProgressIndicator());
+                  }
+
+                  final clients =
+                      snapshot.data!.where(_matches).toList();
+
+                  if (clients.isEmpty) {
+                    return const Center(
+                        child: Text('No clients found'));
+                  }
+
+                  return ListView.builder(
+                    padding:
+                        const EdgeInsets.only(bottom: 120),
+                    itemCount: clients.length,
+                    itemBuilder: (context, i) {
+                      final c = clients[i];
+                      return Card(
+                        color: _statusColor(c.status),
+                        child: ListTile(
+                          title: Text(c.name),
+                          subtitle: Text(
+                            '${c.phone}\nNext: ${DateFormat('dd MMM yyyy').format(c.nextCleaningDate)}',
+                          ),
+                          isThreeLine: true,
+                          trailing: IconButton(
+                            icon: const Icon(Icons.message,
+                                color: Colors.green),
+                            onPressed: () => _sendWhatsApp(c),
+                          ),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ClientDetailScreen(client: c),
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
 
-      // FLOATING BUTTONS
+      /// ➕ ACTION BUTTONS
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
-        
         children: [
           FloatingActionButton.extended(
             heroTag: 'addClient',
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddClientScreen())),
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.person_add),
             label: const Text('Add Client'),
-          ),
-          const SizedBox(height: 10),
-          
-          FloatingActionButton.extended(
-            heroTag: 'viewClient',
-            
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>  ViewClientsScreen())),
-            icon: const Icon(Icons.list),
-            label: const Text('View Clients'),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const AddClientScreen()),
+              );
+            },
           ),
           const SizedBox(height: 10),
           FloatingActionButton.extended(
-            heroTag: 'addTeam',
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddTeamScreen())),
-            icon: const Icon(Icons.group_add),
-            label: const Text('Add Team'),
+            heroTag: 'teams',
+            icon: const Icon(Icons.groups),
+            label: const Text('Teams'),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const TeamListScreen()),
+              );
+            },
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _statCard(String title, String value, int tabIndex) {
-    final isSelected = _selectedTab == tabIndex;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedTab = tabIndex),
-        child: Card(
-          color: isSelected ? Colors.blue[100] : null,
-          elevation: 2,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Column(
-              children: [
-                Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 5),
-                Text(title),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

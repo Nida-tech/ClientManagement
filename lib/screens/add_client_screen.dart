@@ -13,7 +13,7 @@ class _AddClientScreenState extends State<AddClientScreen> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController manualAddressController = TextEditingController();
-  final TextEditingController pinLocationController = TextEditingController(); // optional
+  final TextEditingController pinLocationController = TextEditingController();
 
   DateTime? selectedDate;
   int monthlyTimes = 1;
@@ -47,7 +47,7 @@ class _AddClientScreenState extends State<AddClientScreen> {
         'name': nameController.text,
         'phone': phoneController.text,
         'manualAddress': manualAddressController.text,
-        'pinLocation': pinLocationController.text, // optional
+        'pinLocation': pinLocationController.text,
         'nextCleaningDate': selectedDate != null
             ? Timestamp.fromDate(selectedDate!)
             : null,
@@ -132,48 +132,64 @@ class _AddClientScreenState extends State<AddClientScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        const Icon(Icons.date_range),
-                        const SizedBox(width: 16),
-                        Text(selectedDate == null
-                            ? 'Select Next Cleaning Date'
-                            : DateFormat('dd MMM yyyy').format(selectedDate!)),
-                        const SizedBox(width: 16),
-                        ElevatedButton(
-                          onPressed: () => _selectDate(context),
-                          child: const Text('Pick Date'),
-                        ),
-                      ],
+
+                    // ✅ DATE PICKER ROW (fixed)
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.date_range),
+                          const SizedBox(width: 12),
+                          Text(
+                            selectedDate == null
+                                ? 'Select Next Cleaning Date'
+                                : DateFormat('dd MMM yyyy').format(selectedDate!),
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton(
+                            onPressed: () => _selectDate(context),
+                            child: const Text('Pick Date'),
+                          ),
+                        ],
+                      ),
                     ),
+
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        const Icon(Icons.repeat),
-                        const SizedBox(width: 16),
-                        const Text('Monthly Cleanings:'),
-                        const SizedBox(width: 16),
-                        DropdownButton<int>(
-                          value: monthlyTimes,
-                          items: const [
-                            DropdownMenuItem(value: 1, child: Text('1 time')),
-                            DropdownMenuItem(value: 2, child: Text('2 times')),
-                            DropdownMenuItem(value: 3, child: Text('3 times')),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() {
-                                monthlyTimes = value;
-                              });
-                            }
-                          },
-                        ),
-                      ],
+
+                    // ✅ MONTHLY CLEANINGS ROW (fixed)
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.repeat),
+                          const SizedBox(width: 12),
+                          const Text('Monthly Cleanings:'),
+                          const SizedBox(width: 12),
+                          DropdownButton<int>(
+                            value: monthlyTimes,
+                            items: const [
+                              DropdownMenuItem(value: 1, child: Text('1 time')),
+                              DropdownMenuItem(value: 2, child: Text('2 times')),
+                              DropdownMenuItem(value: 3, child: Text('3 times')),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() {
+                                  monthlyTimes = value;
+                                });
+                              }
+                            },
+                          ),
+                        ],
+                      ),
                     ),
+
                     const SizedBox(height: 32),
+
                     ElevatedButton.icon(
                       icon: const Icon(Icons.save),
-                      label: const Text('Add Client'),
+                      label: const Text('Save Client'),
                       onPressed: _saveClient,
                     ),
                   ],

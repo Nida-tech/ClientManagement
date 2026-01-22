@@ -2,25 +2,41 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 //import 'package:flutter_application_1/models/client_model.dart';
 import 'client_detail_screen.dart';
-//port 'dashboard_screen.dart';
+import '../models/client_model.dart';
+
 
 class ViewClientsScreen extends StatefulWidget {
-  const ViewClientsScreen({super.key}); 
+  const ViewClientsScreen({super.key});
+   
   
   @override
   State<ViewClientsScreen> createState() => _ViewClientsScreenState();
 }
 
+
+
 class _ViewClientsScreenState extends State<ViewClientsScreen> {
+  
   final CollectionReference clientsRef =
       FirebaseFirestore.instance.collection('clients');
 
+Color _getClientTileColor(Client client) {
+  switch (client.status) {
+    case 'notified':
+      return Colors.orange.shade100;
+    case 'confirmed':
+      return Colors.green.shade100;
+    default:
+      return Colors.white;
+  }
+}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Clients'),
       ),
+      
       body: StreamBuilder<QuerySnapshot>(
         stream: clientsRef.snapshots(),
         builder: (context, snapshot) {
@@ -32,33 +48,40 @@ class _ViewClientsScreenState extends State<ViewClientsScreen> {
           }
 
           final clientsData = snapshot.data!.docs;
+          
 
           return ListView.builder(
             itemCount: clientsData.length,
+            
             itemBuilder: (context, index) {
+              
               final clientDoc = clientsData[index];
-              final client = clientDoc.data() as Map<String, dynamic>;
+              final client = clientDoc;
               final clientName = client['name'] ?? 'No Name';
               final phone = client['phone'] ?? 'No Phone';
 
               return ListTile(
+                tileColor: _getClientTileColor(client['status']),
                 title: Text(clientName),
                 subtitle: Text(phone),
                 leading: const Icon(Icons.person),
                 trailing: const Icon(Icons.arrow_forward_ios),
                 onTap: () {
+                  final client = Client.fromFirestore(clientDoc);
                   // Pass clientData as Map<String,dynamic> and clientId separately
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ClientDetailScreen(
-                        clientData: clientDoc.data() as Map<String, dynamic>,
+                      
+                        builder: (_) => ClientDetailScreen(client: client),
                         
                       ),
-                    ),
                   );
+              
                 },
               );
+
+              
             },
           );
         },

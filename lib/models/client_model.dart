@@ -9,6 +9,8 @@ class Client {
   final String? address;
   final String? pinLocation;
   final String? teamId;
+  final String status; // NEW: pending, notified, confirmed
+  final String? assignedTeamId; // 👈 NEW
 
   Client({
     required this.id,
@@ -18,11 +20,18 @@ class Client {
     required this.monthlyCleanings,
     this.address,
     this.pinLocation,
-    this.teamId
+    this.teamId,
+    required this.status,
+    this.assignedTeamId,
   });
 
+
+  
+
+
+   
   // Factory constructor for Firestore document
-  factory Client.fromDocument(DocumentSnapshot doc) {
+  factory Client.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return Client(
       id: doc.id,
@@ -30,11 +39,40 @@ class Client {
       phone: data['phone'] ?? '',
       nextCleaningDate: (data['nextCleaningDate'] as Timestamp).toDate(),
       monthlyCleanings: data['monthlyCleanings'] ?? 1,
+      status: data['status'] ?? 'pending',
       address: data['address'],
       pinLocation: data['pinLocation'],
       teamId: data['teamId'],
+      assignedTeamId: data['assignedTeamId'],
+    );
+    
+  }
+
+  
+
+  // 🔥 ADD THIS
+  Client copyWith({
+    String? name,
+    String? phone,
+    DateTime? nextCleaningDate,
+    int? monthlyCleanings,
+    String? status,
+    String? assignedTeamId,
+    String? pinLocation,
+  }) {
+    return Client(
+      id: id,
+      name: name ?? this.name,
+      phone: phone ?? this.phone,
+      nextCleaningDate: nextCleaningDate ?? this.nextCleaningDate,
+      monthlyCleanings: monthlyCleanings ?? this.monthlyCleanings,
+      status: status ?? this.status,
+      assignedTeamId: assignedTeamId ?? this.assignedTeamId,
+      pinLocation: pinLocation ?? this.pinLocation,
     );
   }
+
+
 
   // Convert Client object to map for Firestore
   Map<String, dynamic> toMap() {
@@ -46,6 +84,11 @@ class Client {
       'address': address,
       'pinLocation': pinLocation,
       'teamId': teamId,
+      'status': status,
     };
   }
+
+  
+
+  
 }

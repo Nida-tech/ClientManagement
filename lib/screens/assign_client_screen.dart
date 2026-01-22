@@ -1,108 +1,131 @@
 import 'package:flutter/material.dart';
-
-
-import '../models/client_model.dart';
-import '../models/team_model.dart';
-import '../services/firestore_service.dart';
-import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../models/team_model.dart';
+import '../models/client_model.dart';
+import '../services/firestore_service.dart';
 
-class AssignClientScreen extends StatefulWidget {
+
+
+class AssignClientsScreen extends StatefulWidget {
   final Team team;
-  const AssignClientScreen({super.key, required this.team});
+
+  const AssignClientsScreen({
+    super.key,
+    required this.team,
+  });
 
   @override
-  State<AssignClientScreen> createState() => _AssignClientScreenState();
+  State<AssignClientsScreen> createState() => _AssignClientsScreenState();
 }
 
-class _AssignClientScreenState extends State<AssignClientScreen> {
+class _AssignClientsScreenState extends State<AssignClientsScreen> {
   final FirestoreService _service = FirestoreService();
-  List<Client> _clients = [];
-  List<String> _selectedClientIds = [];
+  final List<String> selectedClientIds = [];
 
-  @override
-  void initState() {
-    super.initState();
-    _loadClients();
-    _selectedClientIds = List.from(widget.team.clientIds);
-  }
+  // ✅ Send WhatsApp message to team
+  Future<void> _sendTeamWhatsApp(List<Client> clients) async {
+    String message =
+        'Hello ${widget.team.name} Team 👋\n\nAssigned Clients:\n';
 
-  Future<void> _loadClients() async {
-    final clients = await _service.getClients().first;
-    setState(() => _clients = clients);
-  }
-
-  Future<void> _saveAssignment() async {
-    if (_selectedClientIds.length > 5) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Max 5 clients can be assigned')));
-      return;
+    for (var client in clients) {
+      message += '- ${client.name} | PinLocation: ${client.pinLocation}\n';
     }
 
-    final updatedTeam = Team(
-      id: widget.team.id,
-      name: widget.team.name,
-      phone: widget.team.phone,
-      members: widget.team.members,
-      clientIds: _selectedClientIds,
+    final phone = widget.team.phone.replaceAll('+', '');
+    final url = Uri.parse(
+      'https://wa.me/$phone?text=${Uri.encodeComponent(message)}',
     );
 
-    await _service.updateTeam(updatedTeam);
-
-    await _sendWhatsAppMessage(updatedTeam);
-
-    if (!mounted) return;
-    Navigator.pop(context);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
   }
 
-  Future<void> _sendWhatsAppMessage(Team team) async {
-    final assignedClients =
-        await _service.getClientsByIds(team.clientIds);
+  // ✅ Assign selected clients
+  Future<void> _assignClients(List<Client> confirmedClients) async {
+    if (selectedClientIds.isEmpty) return;
 
-    final messageBuffer = StringBuffer();
-    messageBuffer.writeln("Hello ${team.name} 👋\nAssigned Clients:\n");
+    await _service.assignClientsToTeam(
+      widget.team.id,
+      selectedClientIds,
+    );
 
-    for (var client in assignedClients) {
-      messageBuffer.writeln(
-          "${client.name} - ${client.pinLocation} - ${DateFormat('dd MMM yyyy').format(client.nextCleaningDate)}");
-    }
+    final assignedClients = confirmedClients
+        .where((c) => selectedClientIds.contains(c.id))
+        .toList();
 
-    final url = Uri.parse(
-        'https://wa.me/${team.phone.replaceAll('+', '')}?text=${Uri.encodeComponent(messageBuffer.toString())}');
+    if (!mounted) return;
 
-    await launchUrl(url, mode: LaunchMode.externalApplication);
+    await _sendTeamWhatsApp(assignedClients);
+    if (!mounted) return;
+    Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Clients Assigned Successfully ✅')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Assign Clients to ${widget.team.name}')),
-      body: ListView(
-        children: _clients.map((client) {
-          final isSelected = _selectedClientIds.contains(client.id);
-          return CheckboxListTile(
-            title: Text(client.name),
-            subtitle: Text(DateFormat('dd MMM yyyy').format(client.nextCleaningDate)),
-            value: isSelected,
-            onChanged: (val) {
-              setState(() {
-                if (val == true) {
-                  _selectedClientIds.add(client.id);
-                } else {
-                  _selectedClientIds.remove(client.id);
-                }
-              });
-            },
-          );
-        }).toList(),
+      appBar: AppBar(
+        title: Text('Assign Clients to ${widget.team.name}'),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _saveAssignment,
-        label: const Text('Assign & Notify'),
-        icon: const Icon(Icons.send),
+      body: StreamBuilder<List<Client>>(
+        stream: _service.getConfirmedClients(), // ✅ ONLY CONFIRMED
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final confirmedClients = snapshot.data!
+              .where((c) => c.assignedTeamId == null) // ✅ not assigned
+              .toList();
+
+          if (confirmedClients.isEmpty) {
+            return const Center(
+              child: Text('No confirmed clients available'),
+            );
+          }
+
+          return Column(
+            children: [
+              Expanded(
+                child: ListView.builder(
+                  itemCount: confirmedClients.length,
+                  itemBuilder: (context, index) {
+                    final client = confirmedClients[index];
+                    final isSelected =
+                        selectedClientIds.contains(client.id);
+
+                    return CheckboxListTile(
+                      value: isSelected,
+                      title: Text(client.name),
+                      subtitle: Text(client.phone),
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            selectedClientIds.add(client.id);
+                          } else {
+                            selectedClientIds.remove(client.id);
+                          }
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: ElevatedButton(
+                  onPressed: () => _assignClients(confirmedClients),
+                  child: const Text('Assign Selected Clients'),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
-
-
 }
